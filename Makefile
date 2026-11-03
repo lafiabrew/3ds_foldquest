@@ -60,10 +60,11 @@ test: journal-check host
 	$(DEVKITARM)/bin/arm-none-eabi-strip --strip-debug build/3ds/$(TARGET).elf
 	$(DEVKITARM)/bin/arm-none-eabi-objdump -d build/3ds/$(TARGET).elf > build/3ds/$(TARGET).dis
 	$(DEVKITPRO)/tools/bin/smdhtool --create "$(APP_TITLE)" "$(APP_DESC)" "$(APP_AUTHOR)" build/meta/icon.png build/3ds/$(TARGET).smdh
-	python3 -c 'import sys; sys.path.insert(0, "meta"); from generate_bnr_shared import patch_smdh_for_cia; patch_smdh_for_cia("build/3ds/$(TARGET).smdh")'
+	python3 meta/generate_assets.py --patch-smdh build/3ds/$(TARGET).smdh
 	$(DEVKITPRO)/tools/bin/3dsxtool build/3ds/$(TARGET).elf build/3ds/$(TARGET).3dsx --smdh=build/3ds/$(TARGET).smdh
-	makerom -f cia -o build/3ds/$(TARGET).cia -DAPP_ENCRYPTED=false -rsf meta/app.rsf -target t -exefslogo -elf build/3ds/$(TARGET).elf -icon build/3ds/$(TARGET).smdh -banner build/meta/banner.bnr
-	makerom -f cxi -o build/3ds/$(TARGET).cxi -DAPP_ENCRYPTED=false -rsf meta/app.rsf -target t -exefslogo -elf build/3ds/$(TARGET).elf -icon build/3ds/$(TARGET).smdh -banner build/meta/banner.bnr
+	@# Optional HOME-menu banner/chime and boot logo intentionally omitted (asset provenance).
+	makerom -f cia -o build/3ds/$(TARGET).cia -DAPP_ENCRYPTED=false -rsf meta/app.rsf -target t -elf build/3ds/$(TARGET).elf -icon build/3ds/$(TARGET).smdh
+	makerom -f cxi -o build/3ds/$(TARGET).cxi -DAPP_ENCRYPTED=false -rsf meta/app.rsf -target t -elf build/3ds/$(TARGET).elf -icon build/3ds/$(TARGET).smdh
 	@# Same-architecture NEGATIVE CONTROL: a launcher that compiles/links for ARM but has no game path.
 	$(DEVKITARM)/bin/arm-none-eabi-gcc $(ARM_FLAGS) -I$(DEVKITPRO)/libctru/include tests/stub_launcher.c \
 		-specs=3dsx.specs -L$(DEVKITPRO)/libctru/lib -Wl,--gc-sections -Wl,-Map=build/3ds/negative/stub.map \

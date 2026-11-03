@@ -3,15 +3,18 @@
 
 Checks: ARM ELF + defined application/SDK symbols, call-graph reachability from main() (parsed from
 the ELF disassembly), libctru/citro2d link evidence in the linker map, SMDH text/flags/age/region,
-3DSX-embedded SMDH, CIA TMD title id and CXI (NCCH) title id + product code.
---negative-control: run the same checks on a same-architecture stub launcher (compiled and linked
-for ARM with libctru, no game code) and on a mutated copy of the real disassembly; both MUST be
-rejected for the missing game path, NOT for a wrong machine type."""
+3DSX-embedded SMDH, CIA TMD identity/content flags/hash and actual CIA/CXI NCCH identity,
+ExeFS code/icon integrity and explicit absence of optional banner/logo resources.
+--negative-control: reject a same-architecture stub launcher (compiled and linked for ARM with
+libctru, no game code) and a mutated copy of the real disassembly for the missing game path,
+NOT for a wrong machine type; reject specific packaging mutations in the actual production CIA."""
 import argparse
+import hashlib
 import os
 import re
 import struct
 import sys
+import tempfile
 
 TARGET = "3ds_foldquest"
 TITLE_ID = 0x00040000_00D3F700       # 0x0D3F7 << 8 in the low word
@@ -122,6 +125,9 @@ def check_smdh(path):
         errors.append("SMDH region mask")
     if struct.unpack_from("<I", b, 0x2028)[0] != 0x105:
         errors.append("SMDH flags")
+    # Pin the original procedural icon, independently of mutable SMDH metadata.
+    if hashlib.sha256(b[0x2040:]).hexdigest() != "2aa0fee91a1c1fb30b2a05b7c642f86d6f8c0f15a263dd9a57c277007a3720a8":
+        errors.append("SMDH procedural icon changed")
     return errors, b
 
 
@@ -140,30 +146,83 @@ def align(n, a=0x40):
     return (n + a - 1) // a * a
 
 
-def check_cia(path):
+def check_ncch(b, smdh):
+    """Inspect the actual content, not a byte-string search or a sidecar CXI promise."""
+    if len(b) < 0x200 or b[0x100:0x104] != b"NCCH":
+        return ["bad NCCH size/magic"]
+    errors = []
+    if struct.unpack_from("<I", b, 0x104)[0] * 0x200 != len(b):
+        errors.append("NCCH content size")
+    for offset in (0x108, 0x118):  # partition/program identity
+        if struct.unpack_from("<Q", b, offset)[0] != TITLE_ID:
+            errors.append(f"NCCH title id at {offset:#x}")
+    if b[0x150:0x160].rstrip(b"\0") != PRODUCT_CODE:
+        errors.append("NCCH product code")
+    # Existing unencrypted executable/application, Original3DS-compatible packaging.
+    if b[0x188:0x190] != bytes.fromhex("0000000001020007"):
+        errors.append("NCCH flags")
+    if struct.unpack_from("<II", b, 0x198) != (0, 0):
+        errors.append("NCCH logo region must be absent")
+    if b[0x130:0x150] != bytes(32):
+        errors.append("NCCH absent logo hash must be zero")
+    off, size = struct.unpack_from("<II", b, 0x1A0)
+    off, size = off * 0x200, size * 0x200
+    if off < 0x200 or size < 0x200 or off + size > len(b):
+        return errors + ["NCCH ExeFS bounds"]
+    exefs = b[off:off + size]
+    entries = {}
+    for i in range(10):
+        name, start, length = struct.unpack_from("<8sII", exefs, i * 16)
+        name = name.rstrip(b"\0")
+        if not name and start == length == 0:
+            continue
+        if name in (b"banner", b"logo"):
+            errors.append(f"ExeFS {name.decode()} must be absent")
+        if not name or name in entries or not length or 0x200 + start + length > size:
+            errors.append("ExeFS entry name/size/bounds")
+            continue
+        payload = exefs[0x200 + start:0x200 + start + length]
+        if hashlib.sha256(payload).digest() != exefs[0x1E0 - i * 32:0x200 - i * 32]:
+            errors.append("ExeFS entry hash")
+        entries[name] = payload
+    if set(entries) != {b".code", b"icon"}:
+        errors.append("ExeFS must contain only .code and icon")
+    if entries.get(b"icon") != smdh:
+        errors.append("ExeFS icon differs from verified SMDH")
+    return errors
+
+
+def check_cia(path, smdh):
     b = open(path, "rb").read()
+    if len(b) < 0x2020:
+        return ["truncated CIA header"]
     hdr, ctype, ver, cert, tik, tmd, meta = struct.unpack_from("<IHHIIII", b, 0)
-    if hdr != 0x2020:
-        return ["bad CIA header size"]
+    if hdr != 0x2020 or ctype != 0 or ver != 0:
+        return ["bad CIA header size/type/version"]
     tmd_off = align(hdr) + align(cert) + align(tik)
+    content_off = tmd_off + align(tmd)
+    content_size, = struct.unpack_from("<Q", b, 0x18)
+    if tmd < 0xB34 or content_off + content_size > len(b):
+        return ["CIA TMD/content bounds"]
     sig, = struct.unpack_from(">I", b, tmd_off)
     if sig != 0x00010004:
         return [f"unexpected TMD signature type {sig:#x}"]
-    tid, = struct.unpack_from(">Q", b, tmd_off + 0x18C)
-    return [] if tid == TITLE_ID else [f"CIA title id {tid:#018x} != {TITLE_ID:#018x}"]
-
-
-def check_cxi(path):
-    b = open(path, "rb").read()
-    if b[0x100:0x104] != b"NCCH":
-        return ["bad NCCH magic"]
     errors = []
-    tid, = struct.unpack_from("<Q", b, 0x108)
+    tid, = struct.unpack_from(">Q", b, tmd_off + 0x18C)
     if tid != TITLE_ID:
-        errors.append(f"NCCH title id {tid:#018x}")
-    if b[0x150:0x160].rstrip(b"\0") != PRODUCT_CODE:
-        errors.append("NCCH product code")
-    return errors
+        errors.append(f"CIA title id {tid:#018x} != {TITLE_ID:#018x}")
+    count, = struct.unpack_from(">H", b, tmd_off + 0x1DE)
+    index, flags, length = struct.unpack_from(">HHQ", b, tmd_off + 0xB08)
+    if count != 1 or index != 0 or flags != 0 or length != content_size or b[0x20] != 0x80 or any(b[0x21:0x2020]):
+        errors.append("CIA single unencrypted content flags/index/size")
+    content = b[content_off:content_off + content_size]
+    if hashlib.sha256(content).digest() != b[tmd_off + 0xB14:tmd_off + 0xB34]:
+        errors.append("CIA TMD content hash")
+    return errors + check_ncch(content, smdh)
+
+
+def check_cxi(path, smdh):
+    return check_ncch(open(path, "rb").read(), smdh)
 
 
 def verify(build, elf, dis, mapfile):
@@ -187,10 +246,10 @@ def main():
                 sys.exit(f"FAIL: missing or empty artifact {path(n)}")
         errors = verify(b, path(f"{TARGET}.elf"), path(f"{TARGET}.dis"), path(f"{TARGET}.map"))
         e, smdh = check_smdh(path(f"{TARGET}.smdh"))
-        errors += e + check_3dsx(path(f"{TARGET}.3dsx"), smdh) + check_cia(path(f"{TARGET}.cia")) + check_cxi(path(f"{TARGET}.cxi"))
+        errors += e + check_3dsx(path(f"{TARGET}.3dsx"), smdh) + check_cia(path(f"{TARGET}.cia"), smdh) + check_cxi(path(f"{TARGET}.cxi"), smdh)
         if errors:
             sys.exit("FAIL: " + "; ".join(errors))
-        print(f"PASS: {TARGET} ARM ELF with reachable game/APT/FS call path, SMDH, 3DSX, CIA title id {TITLE_ID:#018x}, CXI product code {PRODUCT_CODE.decode()}")
+        print(f"PASS: {TARGET} ARM ELF with reachable game/APT/FS call path, SMDH, 3DSX, CIA title id {TITLE_ID:#018x}, CXI product code {PRODUCT_CODE.decode()}; CIA/CXI ExeFS only .code/icon, no banner/logo or NCCH logo region")
         return
     # Negative control 1: same-architecture stub launcher.
     stub = os.path.join(b, "negative")
@@ -208,6 +267,29 @@ def main():
     if "fq_app_frame unreachable from main" not in merrors:
         sys.exit("FAIL: verifier accepted the mutant with the frame call removed")
     print(f"PASS: verifier rejected same-ARM stub ({len(errors)} findings) and call-edge mutant")
+    # Mutate the freshly built production CIA, not a surrogate header-only artifact.
+    # Assert specific structural errors, so a generic TMD hash failure cannot earn credit.
+    cia = bytearray(open(path(f"{TARGET}.cia"), "rb").read())
+    hdr, _, _, cert, tik, tmd, _ = struct.unpack_from("<IHHIIII", cia, 0)
+    tmd_off = align(hdr) + align(cert) + align(tik)
+    content_off = tmd_off + align(tmd)
+    exefs_off = content_off + struct.unpack_from("<I", cia, content_off + 0x1A0)[0] * 0x200
+    _, smdh = check_smdh(path(f"{TARGET}.smdh"))
+    controls = [(content_off + 0x198, struct.pack("<II", 1, 1), "NCCH logo region must be absent"),
+                (exefs_off, b"banner\0\0", "ExeFS banner must be absent"),
+                (exefs_off, b"logo\0\0\0\0", "ExeFS logo must be absent"),
+                (tmd_off + 0xB0A, b"\0\1", "CIA single unencrypted content flags/index/size"),
+                (content_off + 0x150, b"BAD", "NCCH product code")]
+    with tempfile.TemporaryDirectory(dir=stub) as tmp:
+        mutant = os.path.join(tmp, "packaging.cia")
+        for offset, replacement, expected in controls:
+            data = bytearray(cia)
+            data[offset:offset + len(replacement)] = replacement
+            with open(mutant, "wb") as out:
+                out.write(data)
+            if expected not in check_cia(mutant, smdh):
+                sys.exit("FAIL: CIA packaging control missed: " + expected)
+    print("PASS: actual CIA mutants rejected for NCCH logo region, ExeFS banner/logo, content flags and product identity")
 
 
 if __name__ == "__main__":

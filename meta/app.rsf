@@ -3,7 +3,7 @@ BasicInfo:
   CompanyCode             : "00"
   ProductCode             : "CTR-P-FOLD"
   ContentType             : Application
-  Logo                    : Nintendo
+  Logo                    : None
 
 TitleInfo:
   UniqueId                : 0x0D3F7
