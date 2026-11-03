@@ -1,0 +1,16 @@
+/build/
+/.jj/
+/.wgm/.wgm-ignore-probe
+/.wgm/.loop-*
+/.wgm/.last-harvest-hash
+/.wgm/metrics.tsv
+/.wgm/metrics/
+/.wgm/swarm-logs/
+/.wgm/worktrees/
+/.wgm/memories.md
+/.wgm/STOP
+/.wgm/*.log
+__pycache__/
+*.pyc
+*.bak
+*.tmp

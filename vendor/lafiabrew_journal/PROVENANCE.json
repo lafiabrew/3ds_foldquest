@@ -1,0 +1,13 @@
+{
+  "source": "lafiabrew/3ds_linklab",
+  "commit": "7446e605aeca206733262ab563e7b4a4a43e60f5",
+  "scope": "validated generic diagnostic journal/backend only; per-app integration still needs tests",
+  "legacy_function_prefix": "linklab_native_fs_* retained internally",
+  "files": {
+    "include/native_log_store.h": "a0fcae7d91869f9132882266f66825677d38cbf22b3f7cd0ecb21c0115672d0b",
+    "include/native_log_backend.h": "5b7711be9be699acc0c2572e6a59c57203c66c66292b7fffb6be3466b7963818",
+    "src/native_log_store.c": "ab2571121efbaaabc0b0ebc62bb7d60718d58ac7b1d9e3ef58569c1c63308911",
+    "src/native_fs_host.c": "dbd23efef2a3d0f0b0d8ed047912dcfabc3fb9123412ba8a3a101c0e054b4cb2",
+    "src/native_fs_3ds.c": "4d2b355eef4c2afae61eedb0a090b67d5c3c3c564c304a2bf00cfb6053fbd55f"
+  }
+}
