@@ -1,7 +1,10 @@
 # FoldQuest — parallel first-release plan
 
 ## T1 — Usable first slice, not bootstrap acceptance
-- Status: pending.
+- Status: in_progress (awaiting external exact-pin RUGGED + spec/quality review; author checks below pass).
+- Implemented: `src/fq_core.c` (room/fold core), `src/apt_lifecycle.c` (real `aptHook`), `src/fq_app.c`+`src/main.c` (input/touch/draw/export, called from native `main`), `src/fq_log.c` (own-app JSONL via vendored journal, strict validator), `src/platform_3ds.c` (libctru/citro2d), host sim `src/platform_host.c`; tests `tests/test_fq.c`, `tests/test_apt.c`, `tests/test_contract.py`; `scripts/verify_3ds.py` with same-ARM stub + mutant controls; `meta/app.rsf` (0x0D3F7/CTR-P-FOLD, no New3DS-only keys).
+- Gate evidence: `build/gate/*.log` (full command logs/exit codes) written by the last local gate run; physical lid/sleep observation, Drop byte parity and independent reviews remain open (T2/coordinator).
+- Known limits: single built-in room; no save (by design); host lifecycle is simulated; log export is explicit (X) only.
 - Objective: Original one-room clamshell puzzle whose state changes on actual suspend/resume, with touch/buttons and a complete solve/reset path.
 - Areas: src/include/tests/Makefile/meta/scripts/README/specs, declared actual engine/dependencies where applicable; vendor shared journal only as reviewed dependency.
 - Validation: make test && python3 -m unittest discover -s tests -p test_contract.py -v && make 3ds && make verify-3ds && git diff --check. 
