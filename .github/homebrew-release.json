@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "repo": "3ds_foldquest",
+  "publish_enabled": false,
+  "channel": "wip",
+  "reason": "Public source is WIP; no existing stable CIA release",
+  "native_target": "3ds-native",
+  "artifact_dir": "build/3ds",
+  "cia_asset": "3ds_foldquest.cia",
+  "host_commands": [
+    [
+      "make",
+      "test"
+    ]
+  ],
+  "native_commands": [
+    [
+      "make",
+      "3ds-native"
+    ],
+    [
+      "make",
+      "verify-3ds"
+    ]
+  ],
+  "extra_engine_check": true
+}

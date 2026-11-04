@@ -1,0 +1,44 @@
+name: Homebrew release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build/verify only; no publishing or binary transfer"
+        required: true
+        default: true
+        type: boolean
+      release_tag:
+        description: "Existing stable SemVer tag; empty is a nonpublishing candidate build"
+        required: false
+        default: ""
+        type: string
+      approval_id:
+        description: "Independent approval record SHA256; empty cannot publish"
+        required: false
+        default: ""
+        type: string
+      approval_ref:
+        description: "Immutable hub approval-data commit; empty cannot publish"
+        required: false
+        default: ""
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      id-token: write
+    uses: lafiabrew/3ds_hub/.github/workflows/homebrew-release.yml@60269b3fd15e8d5099ed18f20a927443e4eb3ba7
+    with:
+      kit_ref: 60269b3fd15e8d5099ed18f20a927443e4eb3ba7
+      release_tag: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+      dry_run: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run }}
+      approval_id: ${{ inputs.approval_id || '' }}
+      approval_ref: ${{ inputs.approval_ref || '' }}
